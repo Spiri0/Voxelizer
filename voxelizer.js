@@ -20,9 +20,13 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { wgslFn, vec4, uniform, instanceIndex, vertexIndex, storage, uint } from "three/tsl";
 import { cameraProjectionMatrix, modelWorldMatrix, cameraViewMatrix } from "three/tsl";
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { voxelSurfaceShader } from './shader/voxelSurfaceShader.js';
+import { voxelVolumeShader } from './shader/voxelVolumeShader.js';
+import { voxelVertexShader } from './shader/voxelVertexShader.js';
+import { voxelFragmentShader } from './shader/voxelFragmentShader.js';
 
 
-class App {
+class Voxelizer {
 	constructor() {
 	}
 
@@ -47,7 +51,7 @@ class App {
 		this.scene = new THREE.Scene();
 		this.scene.background = new THREE.Color( 0x00001f );
 		this.camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.01, 1e6 );
-		this.camera.position.set( 100, 50, 100 );
+		this.camera.position.set( -300, 120, -200 );
 		this.controls = new OrbitControls( this.camera, this.renderer.domElement );
 		this.controls.target.set( 0, 0, 0 );
 		this.controls.update();
@@ -80,224 +84,6 @@ class App {
 		console.log(nz);
 
 		const voxelcount = nx * ny * nz;
-
-
-		const voxelSurfaceShader = wgslFn(`
-			fn compute(
-				voxelPositionBuffer: ptr<storage, array<vec3<f32>>, read_write>,
-				voxelInfoBuffer: ptr<storage, array<u32>, read_write>,
-				voxelColorBuffer: ptr<storage, array<vec4<f32>>, read_write>,
-				indexBuffer: ptr<storage, array<u32>, read_write>,
-				positions: ptr<storage, array<vec3<f32>>, read_write>,
-				normals: ptr<storage, array<vec3<f32>>, read_write>,
-				gridSize: vec3<f32>,
-				boundingBoxMin: vec3<f32>,
-				boundingBoxMax: vec3<f32>,
-				voxelSize: f32,
-				positionsLength: u32,
-				indicesLength: u32,
-				index: u32,
-			) -> void {
-
-				//------------------------------------------------------------------------------------------------------------
-
-				var nx = u32(gridSize.x);
-				var ny = u32(gridSize.y);
-				var nz = u32(gridSize.z);
-
-				let x = index % nx;
-				let y = (index / nx) % ny;
-				let z = (index / (nx * ny)) % nz;
-
-				let voxelCenter = boundingBoxMin + vec3<f32>(f32(x), f32(y), f32(z)) * voxelSize + vec3<f32>(0.5 * voxelSize);
-
-				//------------------------------------------------------------------------------------------------------------
-
-				var visible = false;
-
-				let voxelMin = voxelCenter - 0.5 * voxelSize;
-				let voxelMax = voxelCenter + 0.5 * voxelSize;
-
-				for (var i = 0u; i < indicesLength; i += 3) {
-					let i0 = indexBuffer[i];
-					let i1 = indexBuffer[i + 1];
-					let i2 = indexBuffer[i + 2];
-
-					let v0 = positions[i0];
-					let v1 = positions[i1];
-					let v2 = positions[i2];
-
-					if ( triangle_intersects_voxel( v0, v1, v2, voxelCenter, voxelMin, voxelMax ) ) {
-						visible = true;
-						break;
-					}
-				}
-
-
-				voxelInfoBuffer[ index ] = select( u32(0), u32(1), visible );
-				voxelPositionBuffer[ index ] = voxelCenter;
-				voxelColorBuffer[ index ] = vec4<f32>( 0, 1, 0, 1 );
-
-			}
-
-
-			fn triangle_intersects_voxel( v0: vec3<f32>, v1: vec3<f32>, v2: vec3<f32>, voxelCenter: vec3<f32>, voxelMin: vec3<f32>, voxelMax: vec3<f32> ) -> bool {
-
-				let halfSize = ( voxelMax - voxelMin ) * 0.5;
-
-				let tv0 = v0 - voxelCenter;
-				let tv1 = v1 - voxelCenter;
-				let tv2 = v2 - voxelCenter;
-
-				//triangle base vectors ( triangle sides )
-				let e0 = tv1 - tv0;
-				let e1 = tv2 - tv1;
-				let e2 = tv0 - tv2;
-
-				let voxelAxes = array<vec3<f32>, 3>(
-					vec3<f32>( 1.0, 0.0, 0.0 ),
-					vec3<f32>( 0.0, 1.0, 0.0 ),
-					vec3<f32>( 0.0, 0.0, 1.0 )
-				);
-
-				for ( var i = 0u; i < 3u; i = i + 1u ) {
-					let axis = voxelAxes[i];
-
-					let r = halfSize[i];
-					let p0 = dot( tv0, axis );
-					let p1 = dot( tv1, axis );
-					let p2 = dot( tv2, axis );
-
-					let minP = min( p0, min( p1, p2 ) );
-					let maxP = max( p0, max( p1, p2 ) );
-
-					if ( minP > r || maxP < -r ) {
-						return false;
-					}
-				}
-
-
-				let triangleNormal = cross( e0, e1 );
-				let triangleOffset = dot( triangleNormal, tv0 );
-
-				if ( abs( triangleOffset ) > dot( halfSize, abs( triangleNormal ) ) ) {
-					return false;
-				}
-
-
-				for ( var i = 0u; i < 3u; i = i + 1u ) {
-					let axisX = cross( voxelAxes[i], e0 );
-					let axisY = cross( voxelAxes[i], e1 );
-					let axisZ = cross( voxelAxes[i], e2 );
-
-					if ( !check_separating_axis(axisX, tv0, tv1, tv2, halfSize ) ||
-						!check_separating_axis(axisY, tv0, tv1, tv2, halfSize ) ||
-						!check_separating_axis(axisZ, tv0, tv1, tv2, halfSize ) ) {
-						return false;
-					}
-				}
-
-				return true;
-			}
-
-
-			fn check_separating_axis(axis: vec3<f32>, v0: vec3<f32>, v1: vec3<f32>, v2: vec3<f32>, halfSize: vec3<f32>) -> bool {
-
-				let r = dot(halfSize, abs(axis));
-				let p0 = dot(v0, axis);
-				let p1 = dot(v1, axis);
-				let p2 = dot(v2, axis);
-
-				let minP = min(p0, min(p1, p2));
-				let maxP = max(p0, max(p1, p2));
-
-				return !(minP > r || maxP < -r);
-			}
-
-		`);
-
-
-		const voxelVolumeShader = wgslFn(`
-			fn compute(
-				voxelPositionBuffer: ptr<storage, array<vec3<f32>>, read_write>,
-				voxelInfoBuffer: ptr<storage, array<u32>, read_write>,
-				voxelColorBuffer: ptr<storage, array<vec4<f32>>, read_write>,
-				gridSize: vec3<f32>,
-				index: u32,
-			) -> void {
-
-				var nx = u32(gridSize.x);
-				var ny = u32(gridSize.y);
-				var nz = u32(gridSize.z);
-
-				let x = index % nx;
-				let y = (index / nx) % ny;
-				let z = (index / (nx * ny)) % nz;
-
-
-
-				var leftFound = false;
-				var rightFound = false;
-
-				for (var i = 1u; i < nx; i = i + 1u) {
-					let leftIndex = index - i;  // Voxel links
-					let rightIndex = index + i; // Voxel rechts
-
-					if (x >= i && voxelInfoBuffer[leftIndex] == 1) {
-						leftFound = true;
-					}
-					if (x + i < nx && voxelInfoBuffer[rightIndex] == 1) {
-						rightFound = true;
-					}
-					if (leftFound && rightFound) {
-						break;
-					}
-				}
-
-				var bottomFound = false;
-				var topFound = false;
-
-				for (var j = 1u; j < ny; j = j + 1u) {
-					let bottomIndex = index - j * nx;  // Voxel unten
-					let topIndex = index + j * nx;     // Voxel oben
-
-					if (y >= j && voxelInfoBuffer[bottomIndex] == 1) {
-						bottomFound = true;
-					}
-					if (y + j < ny && voxelInfoBuffer[topIndex] == 1) {
-						topFound = true;
-					}
-					if (bottomFound && topFound) {
-						break;
-					}
-				}
-
-				var frontFound = false;
-				var backFound = false;
-
-				for (var k = 1u; k < nz; k = k + 1u) {
-					let frontIndex = index - k * nx * ny;  // Voxel vorne
-					let backIndex = index + k * nx * ny;   // Voxel hinten
-
-					if (z >= k && voxelInfoBuffer[frontIndex] == 1) {
-						frontFound = true;
-					}
-					if (z + k < nz && voxelInfoBuffer[backIndex] == 1) {
-						backFound = true;
-					}
-					if (frontFound && backFound) {
-						break;
-					}
-				}
-
-
-				if (leftFound && rightFound && bottomFound && topFound && frontFound && backFound && voxelInfoBuffer[ index ] == 0u ) {
-					voxelInfoBuffer[ index ] = 1u;
-					voxelColorBuffer[ index ] = vec4<f32>( 1, 0.5, 0, 1 );
-				}
-
-			}
-		`);
 
 
 		const voxelPositionBuffer = new THREE.StorageBufferAttribute( new Float32Array( voxelcount * 3 ), 3 );
@@ -346,46 +132,6 @@ class App {
 		const voxelVerticePositionBuffer = new THREE.StorageBufferAttribute( voxel.attributes.position.array, 3 );
 
 
-		const voxelVertexShader = wgslFn(`
-			fn main_vertex(
-				projectionMatrix: mat4x4<f32>,
-				cameraViewMatrix: mat4x4<f32>,
-				modelWorldMatrix: mat4x4<f32>,
-				instanceIndex: u32,
-				vertexIndex: u32,
-				positions: ptr<storage, array<vec3<f32>>, read>,
-				voxelPositionBuffer: ptr<storage, array<vec3<f32>>, read>,
-				voxelInfoBuffer: ptr<storage, array<u32>, read>,
-			) -> vec4<f32> {
-
-				var info = voxelInfoBuffer[ instanceIndex ];
-
-				if ( info == 0u ) {
-					return vec4<f32>( 0, 1000000.0, 0, 1.0 ); //primitive way to skip unnesseccary voxels
-				}
-
-				var position = positions[ vertexIndex ] + voxelPositionBuffer[ instanceIndex ];
-
-				var outPosition = projectionMatrix * cameraViewMatrix * modelWorldMatrix * vec4<f32>( position, 1 );
-
-				return outPosition;
-			}
-		`);
-
-
-		const voxelFragmentShader = wgslFn(`
-			fn main_vertex(
-				voxelColorBuffer: ptr<storage, array<vec4<f32>>, read>,
-				instanceIndex: u32,
-			) -> vec4<f32> {
-
-				return voxelColorBuffer[ instanceIndex ];
-
-			//	return vec4<f32>( 1, 0.5, 0, 1 );
-			}
-		`);
-
-
 		const voxelVertexShaderParams = {
 			projectionMatrix: cameraProjectionMatrix,
 			cameraViewMatrix: cameraViewMatrix,
@@ -410,6 +156,7 @@ class App {
 		voxelMaterial.wireframe = true;
 
 		const voxelMesh = new THREE.Mesh( voxelGeometry, voxelMaterial );
+		voxelMesh.frustumCulled = false;
 
 		//-------------------------------------------------------------------------------------------
 
@@ -458,7 +205,7 @@ class App {
 		modelMaterial.side = THREE.DoubleSide;
 
 		const mergedMesh = new THREE.Mesh( mergedGeometry, modelMaterial );
-
+		mergedMesh.frustumCulled = false;
 
 		//-------------------------------------------------------------------------------------------
 
@@ -544,4 +291,4 @@ class App {
 }
 
 
-export { App }
+export { Voxelizer }
