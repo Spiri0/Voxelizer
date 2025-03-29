@@ -21,7 +21,7 @@ export const voxelVolumeShader = wgslFn(`
 
 
 		if (x > 0 && x < nx - 1 && y > 0 && y < ny - 1 && z > 0 && z < nz - 1) {
-			if (voxelInfoBuffer[index] == 0) { // Unbekanntes Voxel
+			if (voxelInfoBuffer[index] == 0) {
 				if (
 					voxelInfoBuffer[ getVoxelIndex(x + 1, y, z, nx, ny) ] == 2 ||
 					voxelInfoBuffer[ getVoxelIndex(x - 1, y, z, nx, ny) ] == 2 ||
