@@ -1,6 +1,6 @@
 See it running live [here](https://spiri0.github.io/Threejs-WebGPU-Voxelizer/index.html)
 
-The ship model is the Sabo, a Casablanca-class escort carrier from Phil Crowther's aviation repository.
+The ship model is the Sabo, a Casablanca-class escort carrier from Phil Crowther's aviation repository. A comprehensive Threejs WebGPU app.
 https://github.com/PhilCrowther/Aviation
 
 Surface voxels are green. Volume voxels are yellow.
