@@ -15,7 +15,7 @@
 
 
 import * as THREE from "three";
-import {OrbitControls} from "three/addons/controls/OrbitControls.js";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { wgslFn, vec4, uniform, instanceIndex, vertexIndex, storage, uint } from "three/tsl";
 import { cameraProjectionMatrix, modelWorldMatrix, cameraViewMatrix } from "three/tsl";
@@ -24,6 +24,9 @@ import { voxelSurfaceShader } from './shader/voxelSurfaceShader.js';
 import { voxelVolumeShader } from './shader/voxelVolumeShader.js';
 import { voxelVertexShader } from './shader/voxelVertexShader.js';
 import { voxelFragmentShader } from './shader/voxelFragmentShader.js';
+import { initFlagBufferShader } from './shader/initFlagBufferShader.js';
+import {GUI} from 'three/addons/libs/lil-gui.module.min.js';
+
 
 
 class Voxelizer {
@@ -92,6 +95,8 @@ class Voxelizer {
 		const positionBuffer = new THREE.StorageBufferAttribute( new Float32Array( mergedShipModel.positions ), 3 );
 		const normalBuffer = new THREE.StorageBufferAttribute( new Float32Array( mergedShipModel.normals ), 3 );
 		const indexBuffer = new THREE.StorageBufferAttribute( new Uint32Array( mergedShipModel.indices ), 1 );
+		this.changedFlagBuffer = new THREE.StorageBufferAttribute( new Uint32Array( 1 ), 1 );
+
 
 		const voxelSurfaceCompute = voxelSurfaceShader( {
 			voxelPositionBuffer: storage( voxelPositionBuffer, 'vec3', voxelPositionBuffer.count ),
@@ -110,19 +115,27 @@ class Voxelizer {
 		} ).compute( voxelcount );
 		this.renderer.compute( voxelSurfaceCompute, [ 8, 8, 8 ] );
 
-		const voxelVolumeCompute = voxelVolumeShader( {
+
+		this.initFlagBuffer = initFlagBufferShader( {
+			changedFlagBuffer: storage( this.changedFlagBuffer, 'u32', this.changedFlagBuffer.count ),
+		} ).compute( 1 );		
+
+
+		this.voxelVolumeCompute = voxelVolumeShader( {
 			voxelPositionBuffer: storage( voxelPositionBuffer, 'vec3', voxelPositionBuffer.count ),
 			voxelInfoBuffer: storage( voxelInfoBuffer, 'u32', voxelInfoBuffer.count ),
+			changedFlagBuffer: storage( this.changedFlagBuffer, 'u32', this.changedFlagBuffer.count ),
 			voxelColorBuffer: storage( voxelColorBuffer, 'vec4', voxelColorBuffer.count ),
 			gridSize: uniform( new THREE.Vector3( nx, ny, nz) ),
 			index: instanceIndex,
 		} ).compute( voxelcount );
-		this.renderer.compute( voxelVolumeCompute, [ 8, 8, 8 ] );
 
+
+		await this.floodFillVolumeShader();
+		
 		//------------------------------------------------------------------------------------------------------------
 
-		//Now visualizing the voxels
-
+		//visualizing the voxels
 		const voxel = new THREE.BoxGeometry( voxelSize, voxelSize, voxelSize );
 		const voxelGeometry = new THREE.InstancedBufferGeometry();
 		voxelGeometry.instanceCount = voxelcount;
@@ -209,9 +222,32 @@ class Voxelizer {
 
 		//-------------------------------------------------------------------------------------------
 
-		//scene.add( ship );
+		scene.add( ship );
 		scene.add( voxelMesh );
 		scene.add( mergedMesh );
+
+		ship.visible = false;
+
+		const gui = new GUI();
+
+
+		const visibility = {
+			ship: false,
+			voxelMesh: true,
+			mergedMesh: true
+		};
+
+		gui.add(visibility, 'ship').onChange((value) => {
+			ship.visible = value;
+		});
+
+		gui.add(visibility, 'voxelMesh').onChange((value) => {
+			voxelMesh.visible = value;
+		});
+
+		gui.add(visibility, 'mergedMesh').onChange((value) => {
+			mergedMesh.visible = value;
+		});
 
 		//-------------------------------------------------------------------------------------------
 
@@ -223,6 +259,23 @@ class Voxelizer {
 		this.render();
 
 	}
+
+
+	async floodFillVolumeShader() {
+
+		await this.renderer.computeAsync( this.initFlagBuffer );
+		await this.renderer.computeAsync( this.voxelVolumeCompute, [ 8, 8, 8 ] );
+
+		const isChanged = new Uint32Array( await this.renderer.getArrayBufferAsync( this.changedFlagBuffer ) );
+
+		if ( isChanged[0] === 1 ) {
+		
+			await this.floodFillVolumeShader();
+		} else {
+			console.log("Volume iteration finished");
+		}
+
+	};
 
 
 	async loadModel( url ) {
@@ -245,6 +298,8 @@ class Voxelizer {
 		scene.traverse( ( object ) => {
 			if ( object.isMesh ) {
 				const geometry = object.geometry.clone();
+
+				geometry.applyMatrix4( object.matrixWorld );
 
 				if ( geometry.index ) {
 					const indexArray = Array.from( geometry.index.array );
@@ -275,7 +330,7 @@ class Voxelizer {
 
 		this.renderer.render( this.scene, this.camera );
 
-		requestAnimationFrame( () => {
+		requestAnimationFrame( async () => {
 			this.render();
 		} );
 
