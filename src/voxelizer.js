@@ -32,7 +32,7 @@ class Voxelizer {
 
 	async init( params ) {
 
-        this.params = params;
+		this.params = params;
 
 		const modelBoundingBox = new THREE.Box3().setFromObject( params.model );
 		const mergedModel = this.extractMergedGeometry( params.model );
@@ -53,7 +53,7 @@ class Voxelizer {
 		const positionBuffer = new THREE.StorageBufferAttribute( new Float32Array( mergedModel.positions ), 3 );
 		const normalBuffer = new THREE.StorageBufferAttribute( new Float32Array( mergedModel.normals ), 3 );
 		const indexBuffer = new THREE.StorageBufferAttribute( new Uint32Array( mergedModel.indices ), 1 );
-        this.changedFlagBuffer = new THREE.StorageBufferAttribute( new Uint32Array( 4 ), 1 );
+		this.changedFlagBuffer = new THREE.StorageBufferAttribute( new Uint32Array( 4 ), 1 );
 
 		this.changedFlagBufferStruct = struct( {
 			x: { type: 'u32' },
@@ -189,7 +189,7 @@ class Voxelizer {
 	}
 
 
-    async floodFillVolumeShader() {
+	async floodFillVolumeShader() {
 
 		await this.params.renderer.computeAsync( this.initFlagBuffer );
 		await this.params.renderer.computeAsync( this.voxelVolumeCompute, [ 8, 8, 8 ] );
