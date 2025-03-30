@@ -3,9 +3,10 @@ import { wgslFn } from "three/tsl";
 
 export const initFlagBufferShader = wgslFn(`
 	fn compute(
-		changedFlagBuffer: ptr<storage, array<u32>, read_write>,
+		changedFlagBuffer: ptr<storage, FlagBuffer, read_write>,
 	) -> void {
 
-		changedFlagBuffer[0] = 0;
+		changedFlagBuffer.x = 0;
+		atomicStore(&changedFlagBuffer.y, 0);
 	}
 `);

@@ -5,7 +5,7 @@ export const voxelVolumeShader = wgslFn(`
 	fn compute(
 		voxelPositionBuffer: ptr<storage, array<vec3<f32>>, read_write>,
 		voxelInfoBuffer: ptr<storage, array<u32>, read_write>,
-		changedFlagBuffer: ptr<storage, array<u32>, read_write>,
+		changedFlagBuffer: ptr<storage, FlagBuffer, read_write>,
 		voxelColorBuffer: ptr<storage, array<vec4<f32>>, read_write>,
 		gridSize: vec3<f32>,
 		index: u32,
@@ -31,7 +31,8 @@ export const voxelVolumeShader = wgslFn(`
 					voxelInfoBuffer[ getVoxelIndex(x, y, z - 1, nx, ny) ] == 2
 				) {
 					voxelInfoBuffer[index] = 2;
-					changedFlagBuffer[0] = 1;
+					changedFlagBuffer.x = 1;
+					atomicAdd(&changedFlagBuffer.y, 1);
 				}
 			}
 		}

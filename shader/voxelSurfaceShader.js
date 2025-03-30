@@ -18,8 +18,6 @@ export const voxelSurfaceShader = wgslFn(`
 		index: u32,
 	) -> void {
 
-		//------------------------------------------------------------------------------------------------------------
-
 		var nx = u32(gridSize.x);
 		var ny = u32(gridSize.y);
 		var nz = u32(gridSize.z);
@@ -30,7 +28,6 @@ export const voxelSurfaceShader = wgslFn(`
 
 		let voxelCenter = boundingBoxMin + vec3<f32>(f32(x), f32(y), f32(z)) * voxelSize + vec3<f32>(0.5 * voxelSize);
 
-		//------------------------------------------------------------------------------------------------------------
 
 		var isSurface = false;
 

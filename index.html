@@ -1,8 +1,11 @@
 <html>
-    <head>
-        <link rel="shortcut icon" href="#">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-    
+	<head>
+		<link rel="shortcut icon" href="#">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+
+		<link rel="stylesheet" typ="text/css" href="resources/css/style.css">
+		<title>Three.js WebGPU Voxelizer</title>
+
 		<script type="importmap"> {
 			"imports": {
 				"three": "./node_modules/three/build/three.webgpu.js",
@@ -13,21 +16,13 @@
 		}
 		</script>
 
-    </head>
+	</head>
 
-    <body style="margin: 0">
-        <canvas id="canvas"></canvas>
+	<body>
 
-        <script type="module">
+		<div id="container"></div>
+		<script type="module" src="./src/index.js"></script>
 
-            import { Voxelizer } from './voxelizer.js';
+	</body>
 
-            const canvas = document.getElementById("canvas");
-
-            const app = new Voxelizer();
-            await app.init(canvas);
-
-        </script>
-
-    </body>
 </html>
