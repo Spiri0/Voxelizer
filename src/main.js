@@ -64,12 +64,14 @@ class Main {
 		//-------------------------------------------------------------------------------------------
 
 		const sabo = await this.modelLoader( './resources/models/CVE.glb' );
+		//const sabo = await this.modelLoader( './resources/models/blackPearl.glb' );
 		
 		this.voxelizer = new Voxelizer();
 		await this.voxelizer.init( {
 			renderer: this.renderer,
 			model: sabo,
-			voxelSize: 0.5 / 0.3048
+			voxelSize: 0.5 / 0.3048	//sabo model is in feet 0.5 means 0.5m
+			//voxelSize: 0.2	//for black pearl
 		} );
 
 		
