@@ -15,6 +15,7 @@
 
 
 import * as THREE from "three";
+import { StorageBufferAttribute } from "three/webgpu";
 import { wgslFn, vec4, uniform, instanceIndex, vertexIndex, storage, struct, uint } from "three/tsl";
 import { cameraProjectionMatrix, modelWorldMatrix, cameraViewMatrix } from "three/tsl";
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
@@ -46,14 +47,22 @@ class Voxelizer {
 
 		this.voxelcount = nx * ny * nz;
 
+		this.workgroupSize = [ 8, 8, 4 ];
 
-		this.voxelPositionBuffer = new THREE.StorageBufferAttribute( new Float32Array( this.voxelcount * 3 ), 3 );
-		this.voxelColorBuffer = new THREE.StorageBufferAttribute( new Float32Array( this.voxelcount * 4 ), 4 );
-		this.voxelInfoBuffer = new THREE.StorageBufferAttribute( new Uint32Array( this.voxelcount ), 1 );
-		const positionBuffer = new THREE.StorageBufferAttribute( new Float32Array( mergedModel.positions ), 3 );
-		const normalBuffer = new THREE.StorageBufferAttribute( new Float32Array( mergedModel.normals ), 3 );
-		const indexBuffer = new THREE.StorageBufferAttribute( new Uint32Array( mergedModel.indices ), 1 );
-		this.changedFlagBuffer = new THREE.StorageBufferAttribute( new Uint32Array( 4 ), 1 );
+		const dispatchX = Math.ceil( nx / this.workgroupSize[ 0 ] );
+		const dispatchY = Math.ceil( ny / this.workgroupSize[ 1 ] );
+		const dispatchZ = Math.ceil( nz / this.workgroupSize[ 2 ] );
+
+		this.dispatchSize = [ dispatchX, dispatchY, dispatchZ ];
+
+
+		this.voxelPositionBuffer = new StorageBufferAttribute( new Float32Array( this.voxelcount * 3 ), 3 );
+		this.voxelColorBuffer = new StorageBufferAttribute( new Float32Array( this.voxelcount * 4 ), 4 );
+		this.voxelInfoBuffer = new StorageBufferAttribute( new Uint32Array( this.voxelcount ), 1 );
+		const positionBuffer = new StorageBufferAttribute( new Float32Array( mergedModel.positions ), 3 );
+		const normalBuffer = new StorageBufferAttribute( new Float32Array( mergedModel.normals ), 3 );
+		const indexBuffer = new StorageBufferAttribute( new Uint32Array( mergedModel.indices ), 1 );
+		this.changedFlagBuffer = new StorageBufferAttribute( new Uint32Array( 4 ), 4 );
 
 		this.changedFlagBufferStruct = struct( {
 			x: { type: 'u32' },
@@ -79,8 +88,9 @@ class Voxelizer {
 			positionsLength: uniform( uint( positionBuffer.count ) ),
 			indicesLength: uniform( uint( indexBuffer.count ) ),
 			index: instanceIndex,
-		} ).compute( this.voxelcount );
-		params.renderer.compute( voxelSurfaceCompute, [ 8, 8, 8 ] );
+		} ).computeKernel( this.workgroupSize );
+		params.renderer.compute( voxelSurfaceCompute, [ dispatchX, dispatchY, dispatchZ ] );
+		//params.renderer.compute( voxelSurfaceCompute, [ 200, 200, 1 ] );
 
 
 		this.initFlagBuffer = initFlagBufferShader( {
@@ -95,7 +105,7 @@ class Voxelizer {
 			voxelColorBuffer: storage( this.voxelColorBuffer, 'vec4', this.voxelColorBuffer.count ),
 			gridSize: uniform( new THREE.Vector3( nx, ny, nz) ),
 			index: instanceIndex,
-		} ).compute( this.voxelcount );
+		} ).computeKernel( [ 8, 8, 4 ] );
 
 		
 		await this.floodFillVolumeShader();
@@ -104,7 +114,7 @@ class Voxelizer {
 
 
 		const voxel = new THREE.BoxGeometry( voxelSize, voxelSize, voxelSize );
-		const voxelVerticePositionBuffer = new THREE.StorageBufferAttribute( voxel.attributes.position.array, 3 );
+		const voxelVerticePositionBuffer = new StorageBufferAttribute( voxel.attributes.position.array, 3 );
 
 
 		const voxelVertexShaderParams = {
@@ -192,7 +202,7 @@ class Voxelizer {
 	async floodFillVolumeShader() {
 
 		await this.params.renderer.computeAsync( this.initFlagBuffer );
-		await this.params.renderer.computeAsync( this.voxelVolumeCompute, [ 8, 8, 8 ] );
+		await this.params.renderer.computeAsync( this.voxelVolumeCompute, this.dispatchSize );
 
 		const isChanged = new Uint32Array( await this.params.renderer.getArrayBufferAsync( this.changedFlagBuffer ) );
 
